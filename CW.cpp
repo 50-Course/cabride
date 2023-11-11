@@ -2,6 +2,17 @@
 // My name:
 // My student id:
 
+// ------------------------------------------
+// Helpful Notes
+//
+//  - At any given moment, only two taxis can commute on a bridge simultaneously
+//    due to its two-track structure
+//  - Max. of 4 passengers is allowed on a taxi trip
+//
+//  - Taxis are located at random initially, and implemented with threads
+//  - Taxis pick the next bridge to visit at random
+// ------------------------------------------
+
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -38,16 +49,6 @@ class Taxi;
 class Island;
 class Semaphore;
 
-// Notes:
-//
-// I have just learnt, we would use a semaphore on the bridges and taxis to
-// control smooth flow of traffic. I have not implemented this as I have not
-// learnt it yet.
-//
-// Copilot, but how would I use a semaphore on the bridges and the taxis?
-// Why should I? How should I implement it?
-//
-
 Bridge *bridges;
 Taxi *taxis;
 Island *islands;
@@ -55,7 +56,7 @@ Island *islands;
 class Semaphore {
 private:
   int N;
-  mutex m;
+  std::mutex m;
 
 public:
   Semaphore(int nb) { N = nb; };
@@ -68,13 +69,6 @@ public:
     std::lock_guard<std::mutex> lock(m);
     N -= nb;
     if (N < 0) {
-      // we need to wait
-      // so we need to unlock the mutex
-      // and then wait
-      // and then lock the mutex again
-      // and then decrement N by nbPeople
-      // and then unlock the mutex
-      // and then return
       m.unlock();
       // wait
       m.lock();
@@ -104,27 +98,39 @@ public:
 
 class Island {
 private:
-  int nbPeople;      // People that will take a taxi to travel somewhere
+  int nbPeople;      // People that will take a taxi to travel somewhere and
+                     // have not been dropped on another island
   int peopleDropped; // People that will take a taxi to travel somewhere
+                     // and have been dropped on another island
+  Semaphore islandMutex;
+
 public:
   int GetNbPeople() { return nbPeople; }
   int GetNbDroppedPeople() { return peopleDropped; }
   Island() {
     nbPeople = NB_PEOPLE;
     peopleDropped = 0;
+    islandMutex = Semaphore(1);
   };
   bool GetOnePassenger() {
     // Complete this function. Returns weather a passenger has been picked up
     // (True or false) and reduce the nbPeople count.
-    return false;
+    nbPeople -= 1;
+    islandMutex.V(1);
+    return true;
   }
   void DropOnePassenger() // Complete this function.
-  {}
+  {
+    islandMutex.P(1);
+    peopleDropped += 1;
+    islandMutex.V(1);
+  }
 };
 
 class Bridge {
 private:
   int origin, dest;
+  Semaphore bridgeSemaphore;
 
 public:
   Bridge() {
@@ -144,6 +150,8 @@ private:
   int location; // island location
   int dest[4] = {-1, -1, -1,
                  -1}; // Destination of the people taken; -1 for seat is empty
+                      // or the person has been dropped
+
   int GetId() {
     return this - taxis;
   }; // a hack to get the taxi thread id; Better would be to pass id throught
@@ -188,7 +196,17 @@ public:
 
   void DropPassengers() {
     int cpt = 0;
-    // to be completed
+
+    // Drop one passenger on the island one at a time
+    // If the seat is not empty
+    for (int i = 0; i < 4; i++) {
+      if (dest[i] != -1) {
+        islands[location].DropOnePassenger();
+        dest[i] = -1;
+        cpt++;
+      }
+    }
+
     if (cpt > 0)
       printf("Taxi %d has dropped %d clients on island %d.\n", GetId(), cpt,
              location);
@@ -197,7 +215,17 @@ public:
   void CrossBridge() {
     int bridge;
     GetNewLocationAndBridge(location, bridge);
-    // Get the right to cross the bridge (to be completed)
+
+    // To cross the bridge, assuming the seats are not empty
+    // Taxi request access to cross the bridge using semaphore
+    // release bridge access back to thread pool upon hitting a new destination
+    bridges[bridge].bridgeSemaphore.P(2);
+    std::this_thread::sleep_for(std::chrono::seconds(
+        2)); // assume it takes two seconds to cross the bridge
+    printf("Taxi %d has picked up %d clients on island %d.\n", GetId(), cpt,
+           location);
+    location = bridges[bridge].GetDest();
+    bridges[bridges].bridgeSemaphore.V(2);
   }
 };
 
@@ -222,19 +250,6 @@ void TaxiThread(int id) // this function is already completed
 
 void RunTaxisUntilWorkIsDone() // this function is already completed
 {
-  // this function creates a thread for each taxi, on our island and then joins
-  // them all together, the thread function is TaxiThread, which is defined
-  // above the thread function is passed the taxi id, which is used to index
-  // into the taxis array
-  //
-  // the thread function is defined above, and it loops until all the people
-  // have been dropped off
-  // the thread function calls GetPassengers, CrossBridge, and DropPassengers
-  // in that order
-  // GetPassengers picks up people from the islands
-  // CrossBridge moves the taxi to a new island
-  // DropPassengers drops off people on the new islands
-  // thank you for coming to my ted talk
   std::thread taxis[NB_TAXIS];
   for (int i = 0; i < NB_TAXIS; i++)
     taxis[i] = std::thread(TaxiThread, i);
