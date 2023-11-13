@@ -102,28 +102,31 @@ private:
                      // have not been dropped on another island
   int peopleDropped; // People that will take a taxi to travel somewhere
                      // and have been dropped on another island
-  Semaphore islandMutex;
+
+  Semaphore *islandMutex;
 
 public:
   int GetNbPeople() { return nbPeople; }
   int GetNbDroppedPeople() { return peopleDropped; }
+
   Island() {
     nbPeople = NB_PEOPLE;
     peopleDropped = 0;
-    islandMutex = Semaphore(1);
+    islandMutex = new Semaphore(1);
   };
+
   bool GetOnePassenger() {
     // Complete this function. Returns weather a passenger has been picked up
     // (True or false) and reduce the nbPeople count.
     nbPeople -= 1;
-    islandMutex.V(1);
+    islandMutex->V(1);
     return true;
   }
   void DropOnePassenger() // Complete this function.
   {
-    islandMutex.P(1);
+    islandMutex->P(1);
     peopleDropped += 1;
-    islandMutex.V(1);
+    islandMutex->V(1);
   }
 };
 
@@ -222,7 +225,7 @@ public:
     bridges[bridge].bridgeSemaphore.P(2);
     std::this_thread::sleep_for(std::chrono::seconds(
         2)); // assume it takes two seconds to cross the bridge
-    printf("Taxi %d has picked up %d clients on island %d.\n", GetId(), cpt,
+    printf("Taxi %d has crossed the bridge onto island %d.\n", GetId(), cpt,
            location);
     location = bridges[bridge].GetDest();
     bridges[bridges].bridgeSemaphore.V(2);
