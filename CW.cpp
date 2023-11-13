@@ -1,6 +1,5 @@
 // main.cpp : Defines the entry point for the console application.
-// My name:
-// My student id:
+// My name: My student id:
 
 // ------------------------------------------
 // Helpful Notes
@@ -15,6 +14,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
@@ -56,42 +56,24 @@ Island *islands;
 class Semaphore {
 private:
   int N;
-  std::mutex m;
+  mutex m;
+  condition_variable cv;
 
 public:
   Semaphore(int nb) { N = nb; };
   void P(int nb = 1) {
-    // we want to decrement the semaphore count by nb - that is, we want to
-    // take nb from Nj
-    // and wait if needed.
-    // so we need to lock the mutex, and then decrement N by nbPeople
-    // and then unlock the mutex
-    std::lock_guard<std::mutex> lock(m);
-    N -= nb;
+    std::unique_lock<std::mutex> lock(m);
     if (N < 0) {
-      m.unlock();
-      // wait
-      m.lock();
-      N -= nb;
-      m.unlock();
-      return;
+      cv.wait(lock), [this] { return N > 0; };
     }
 
+    N -= 1;
   }; // Decrement the semaphore count by nb and wait if needed.
   void V(int nb = 1) {
-    // we want to increment the semaphore count by nb - that is, we want to
-    // add nb to N
-    // so we need to lock the mutex, and then increment N by nbPeople
-    // and then unlock the mutex
     std::lock_guard<std::mutex> lock(m);
-    N += nb;
+    N += 1;
     if (N <= 0) {
-      m.unlock();
-      // signal
-      m.lock();
-      N += nb;
-      m.unlock();
-      return;
+      cv.notify_one();
     }
   }; // Increment the semaphore count by nb.
 };
@@ -133,10 +115,9 @@ public:
 class Bridge {
 private:
   int origin, dest;
-  Semaphore bridgeSemaphore;
 
 public:
-  Bridge() {
+  Bridge() : bridgeSemaphore(2) {
     origin = rand() % NB_ISLANDS;
     do
       dest = rand() % NB_ISLANDS;
@@ -146,6 +127,7 @@ public:
   int GetDest() { return dest; };
   void SetOrigin(int v) { origin = v; };
   void SetDest(int v) { dest = v; };
+  Semaphore bridgeSemaphore; // Semaphore to control access to the bridge
 };
 
 class Taxi {
@@ -198,7 +180,7 @@ public:
   }
 
   void DropPassengers() {
-    int cpt = 0;
+    int cpt = 0; // number of passengers dropped
 
     // Drop one passenger on the island one at a time
     // If the seat is not empty
@@ -225,10 +207,10 @@ public:
     bridges[bridge].bridgeSemaphore.P(2);
     std::this_thread::sleep_for(std::chrono::seconds(
         2)); // assume it takes two seconds to cross the bridge
-    printf("Taxi %d has crossed the bridge onto island %d.\n", GetId(), cpt,
+    printf("Taxi %d has crossed the bridge onto island %d.\n", GetId(),
            location);
     location = bridges[bridge].GetDest();
-    bridges[bridges].bridgeSemaphore.V(2);
+    bridges[bridge].bridgeSemaphore.V(2);
   }
 };
 
