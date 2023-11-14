@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <iostream>
 #include <mutex>
@@ -46,9 +47,7 @@ class Semaphore {
       private:
         int N;
         mutex m;
-        std::conditional_variable
-            cv; // better way to handle synchronization.
-                // Ref: https://devdocs.io/cpp/header/condition_variable
+        std::condition_variable cv;
 
       public:
         Semaphore(int nb) { N = nb; };
@@ -85,7 +84,7 @@ class Island {
                 nbPeople = NB_PEOPLE;
                 peopleDropped = 0;
                 pplSemaphore = new Semaphore(1);
-                dropSemaphore = new Semaphore(1);
+                pplDropSemaphore = new Semaphore(1);
         };
         bool GetOnePassenger() {
                 // Complete this function. Returns weather a passenger has been
@@ -122,6 +121,9 @@ class Island {
 class Bridge {
       private:
         int origin, dest;
+        Semaphore *bridgeSemaphore;
+        Semaphore *fourLane; // Semaphore for the 4 tracks bridge. Allows 4
+                             // taxis to cross at the same time.
 
       public:
         Bridge() {
@@ -129,30 +131,36 @@ class Bridge {
                 do
                         dest = rand() % NB_ISLANDS;
                 while (dest == origin);
+                bridgeSemaphore = new Semaphore(2);
+                fourLane = new Semaphore(4); // Semaphore for the 4 tracks
+                                             // bridge. Allows 4 taxis to
+                                             // cross at the same time.
         };
         int GetOrigin() { return origin; };
         int GetDest() { return dest; };
         void SetOrigin(int v) { origin = v; };
         void SetDest(int v) { dest = v; };
-        Semaphore bridgeSemaphore =
-            new Semaphore(2); // Semaphore to protect the default
-                              // behaviour, where a bridge is a two-lane
-                              // bridge.
-                              //
-                              // Thus, only two taxis can cross the bridge
+        Semaphore *GetBridgeSemaphore() { return bridgeSemaphore; }
+        Semaphore *GetFourLaneSemaphore() { return fourLane; }
 
-        // Helper function that defaults to bridge semaphore if no additional
-        // lane is specified. Otherwise, it uses the bridge semaphore with the
-        // new lanes provided. Hence, more granular access control.
-        void ExpandBridgeThroughput(int lane = 2) {}
+        // Params: cc - cross condition (true if taxi can cross)
+        //
+        // This function is used to allow multiple taxis to cross the bridge at
+        // the same time.
+        void Cross(Semaphore *bridgeSemaphore, bool &cc) {
+                bridgeSemaphore->P();
+                cc = true;
+                bridgeSemaphore->V();
+        }
 };
 
 class Taxi {
       private:
-        int location; // island location
-        int dest[4] = {
-            -1, -1, -1,
-            -1}; // Destination of the people taken; -1 for seat is empty
+        int location;                   // island location
+        int dest[4] = {-1, -1, -1, -1}; // Destination of the people taken; -1
+                                        // for seat is empty (max 4 people)
+
+        int nTaxi = 0; // Number of taxis on the bridge
         int GetId() {
                 return this - taxis;
         }; // a hack to get the taxi thread id; Better would be to pass id
@@ -207,16 +215,44 @@ class Taxi {
 
         void DropPassengers() {
                 int cpt = 0;
-                // to be completed
+
+                for (int i = 0; i < 4; i++) {
+                        if (dest[i] != -1) {
+                                cpt++;
+                                islands[dest[i]].DropOnePassenger();
+                                dest[i] = -1;
+                        }
+                }
+
                 if (cpt > 0)
                         printf("Taxi %d has dropped %d clients on island %d.\n",
                                GetId(), cpt, location);
+        }
+
+        // Cross the bridge. If improved is true, then use the improved version
+        void CrossingController(bool improved = false) {
+                if (improved) {
+                        CrossBridgeImprovedThroughput();
+                } else {
+                        CrossBridge();
+                }
         }
 
         void CrossBridge() {
                 int bridge;
                 GetNewLocationAndBridge(location, bridge);
                 // Get the right to cross the bridge (to be completed)
+
+                // acquire lock to cross the bridge
+                bridges[bridge].GetBridgeSemaphore()->P();
+
+                std::this_thread::sleep_for(std::chrono::seconds(4));
+                printf("Taxi %d is crossing bridge %d from island %d to %d.\n",
+                       GetId(), bridge, bridges[bridge].GetOrigin(),
+                       bridges[bridge].GetDest());
+                location = bridges[bridge].GetDest();
+
+                bridges[bridge].GetBridgeSemaphore()->V();
         }
 
         // An improved version of the cross bridge function that allows for
@@ -225,7 +261,22 @@ class Taxi {
         // direction.
         //
         // TODO: to be completed
-        void CrossBridgeImprovedThroughput() {}
+        void CrossBridgeImprovedThroughput() {
+                int bridge;
+
+                GetNewLocationAndBridge(location, bridge);
+
+                // Get the right to cross the bridge (to be completed)
+                bool canCrossBridge = false;
+
+                if (bridges[bridge].GetOrigin() == location) {
+                        do {
+                                bridges[bridge].Cross(
+                                    bridges[bridge].GetFourLaneSemaphore(),
+                                    canCrossBridge);
+                        } while (!canCrossBridge);
+                }
+        }
 };
 
 // code for running the taxis
