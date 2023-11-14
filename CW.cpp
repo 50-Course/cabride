@@ -100,9 +100,13 @@ public:
   bool GetOnePassenger() {
     // Complete this function. Returns weather a passenger has been picked up
     // (True or false) and reduce the nbPeople count.
-    nbPeople -= 1;
-    islandMutex->V(1);
-    return true;
+    islandMutex->P(1);
+    if (nbPeople > 0) {
+      peopleDropped--;
+      islandMutex->V(1);
+      return true;
+    }
+    return false;
   }
   void DropOnePassenger() // Complete this function.
   {
@@ -123,6 +127,7 @@ public:
       dest = rand() % NB_ISLANDS;
     while (dest == origin);
   };
+
   int GetOrigin() { return origin; };
   int GetDest() { return dest; };
   void SetOrigin(int v) { origin = v; };
@@ -133,6 +138,8 @@ public:
 class Taxi {
 private:
   int location; // island location
+  int taxisOnBridge = 0;
+
   int dest[4] = {-1, -1, -1,
                  -1}; // Destination of the people taken; -1 for seat is empty
                       // or the person has been dropped
@@ -211,6 +218,52 @@ public:
            location);
     location = bridges[bridge].GetDest();
     bridges[bridge].bridgeSemaphore.V(2);
+  }
+
+  // determine if a bridge is odd or even
+  // given the `dest` and `origin` of the bridge
+  bool IsBridgeOdd(Bridge &bridge) {
+    return (bridge.GetDest() % 2 != 0) && (bridge.GetOrigin() % 2 != 0);
+  }
+
+  // Version 2 of CrossBridge
+  //
+  // Allow for upto four taxis (moving in the same direction) to cross each
+  // track of the bridge at a time
+  //
+  // A track here refers to a lane on each sides of the bridge, allowing for
+  // a total of 8 taxis to cross the bridge at a time
+  //
+  void CrossBridgeV2() {
+    int bridge;
+    GetNewLocationAndBridge(location, bridge);
+
+    // Check if the bridge is odd or even for optimizing
+    // the number of taxis that can cross the bridge at a time
+    //
+    // If bridge is even, upto four taxis can cross in the same direction at a
+    // time If bridge is odd, only one taxi can cross at a time
+    if (IsBridgeOdd(bridges[bridge])) {
+      // If bridge is odd, only one taxi can cross at a time
+      bridges[bridge].bridgeSemaphore.P(1);
+      std::this_thread::sleep_for(std::chrono::seconds(
+          2)); // assume it takes two seconds to cross the bridge
+
+      printf("Taxi %d has crossed the bridge onto island %d.\n", GetId(),
+             location);
+      location = bridges[bridge].GetDest();
+      bridges[bridge].bridgeSemaphore.V(1);
+
+    } else {
+      bridges[bridge].bridgeSemaphore.P(4);
+      std::this_thread::sleep_for(std::chrono::seconds(
+          15)); // assume it takes two seconds to cross the bridge
+
+      printf("Taxi %d has crossed the bridge onto island %d.\n", GetId(),
+             location);
+      location = bridges[bridge].GetDest();
+      bridges[bridge].bridgeSemaphore.V(4);
+    }
   }
 };
 
