@@ -143,7 +143,9 @@ class Bridge {
         Semaphore *GetBridgeSemaphore() { return bridgeSemaphore; }
         Semaphore *GetFourLaneSemaphore() { return fourLane; }
 
-        // Params: cc - cross condition (true if taxi can cross)
+        // Params:
+        //      cc - cross condition (true if taxi can cross)
+        //      bridgeSemaphore - semaphore for the bridge
         //
         // This function is used to allow multiple taxis to cross the bridge at
         // the same time.
@@ -229,8 +231,12 @@ class Taxi {
                                GetId(), cpt, location);
         }
 
-        // Cross the bridge. If improved is true, then use the improved version
-        void CrossingController(bool improved = false) {
+        // Function to cross how a bridge may be crossed, depending on the
+        // improved flag. If improved is true, then use the improved version
+        // of the Function
+        //
+        // This gives the user future flexibility to test the improved version
+        void CrossBridgeController(bool improved = false) {
                 if (improved) {
                         CrossBridgeImprovedThroughput();
                 } else {
@@ -260,7 +266,6 @@ class Taxi {
         // bridge at the same time, as long as they are going in the same
         // direction.
         //
-        // TODO: to be completed
         void CrossBridgeImprovedThroughput() {
                 int bridge;
 
@@ -276,11 +281,35 @@ class Taxi {
                                     canCrossBridge);
                         } while (!canCrossBridge);
                 }
+
+                std::this_thread::sleep_for(std::chrono::seconds(4));
+                printf("Taxi %d is crossing bridge %d from island %d to %d.\n",
+                       GetId(), bridge, bridges[bridge].GetOrigin(),
+                       bridges[bridge].GetDest());
+                location = bridges[bridge].GetDest();
+
+                bridges[bridge].GetFourLaneSemaphore()->V();
         }
 };
 
 // code for running the taxis
 // Comment here on mutual exclusion and the condition
+//
+// ==============================================
+// == TERMINATION CRITERION:                    ==
+//
+// This implementation need not be called in a critical section here.
+//
+// 1. It involves a single atomic operation, which involves reading of shared
+//    data (nbPeople) with no modification to it.
+// 2. It is the sum of the number of people dropped off at each island.
+// 3. We don't care whether it's being accessed or modified by other threads
+//    (taxis) at the moment of calling GetNbDroppedPeople because again, we
+//    simply need the current value of it at the same exact moment to increase
+//    sum, hence, we don't need to worry about the value being modified by other
+//    threads (which means, no race condition)
+//
+// ==============================================
 bool NotEnd() // this function is already completed
 {
         int sum = 0;
