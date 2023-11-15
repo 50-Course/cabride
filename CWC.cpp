@@ -98,6 +98,7 @@ class Island {
                         pplSemaphore->V();
                         return true;
                 }
+                pplSemaphore->V();
                 return false;
         }
         void DropOnePassenger() // Complete this function.
@@ -250,15 +251,27 @@ class Taxi {
                 // Get the right to cross the bridge (to be completed)
 
                 // acquire lock to cross the bridge
-                bridges[bridge].GetBridgeSemaphore()->P();
+                // bridges[bridge].GetBridgeSemaphore()->P();
+                //
+                // std::this_thread::sleep_for(std::chrono::seconds(4));
+                // printf("Taxi %d is crossing bridge %d from island %d to
+                // %d.\n",
+                //        GetId(), bridge, bridges[bridge].GetOrigin(),
+                //        bridges[bridge].GetDest());
+                // location = bridges[bridge].GetDest();
+                //
+                // bridges[bridge].GetBridgeSemaphore()->V();
 
-                std::this_thread::sleep_for(std::chrono::seconds(4));
-                printf("Taxi %d is crossing bridge %d from island %d to %d.\n",
-                       GetId(), bridge, bridges[bridge].GetOrigin(),
-                       bridges[bridge].GetDest());
-                location = bridges[bridge].GetDest();
+                bool canCrossBridge = false;
+                if (bridges[bridge].GetOrigin() == location) {
 
-                bridges[bridge].GetBridgeSemaphore()->V();
+                        do {
+                                bridges[bridge].Cross(
+                                    bridges[bridge].GetBridgeSemaphore(),
+                                    canCrossBridge);
+
+                        } while (!canCrossBridge);
+                }
         }
 
         // An improved version of the cross bridge function that allows for
@@ -279,10 +292,11 @@ class Taxi {
                                 bridges[bridge].Cross(
                                     bridges[bridge].GetFourLaneSemaphore(),
                                     canCrossBridge);
+
                         } while (!canCrossBridge);
                 }
 
-                std::this_thread::sleep_for(std::chrono::seconds(4));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 printf("Taxi %d is crossing bridge %d from island %d to %d.\n",
                        GetId(), bridge, bridges[bridge].GetOrigin(),
                        bridges[bridge].GetDest());
@@ -315,6 +329,7 @@ bool NotEnd() // this function is already completed
         int sum = 0;
         for (int i = 0; i < NB_ISLANDS; i++)
                 sum += islands[i].GetNbDroppedPeople();
+
         return sum != NB_PEOPLE * NB_ISLANDS;
 }
 
